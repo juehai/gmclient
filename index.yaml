@@ -6,6 +6,7 @@ default:
   require:
     - perl
     - multipkg
+    - git
 
 
 
