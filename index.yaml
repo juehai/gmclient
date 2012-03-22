@@ -1,0 +1,11 @@
+---
+default:
+  name: gmclient
+  summary: Configuration management tool.
+  version: '0.1'
+  require:
+    - perl
+    - multipkg
+
+
+

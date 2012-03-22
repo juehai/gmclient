@@ -1,0 +1,84 @@
+#!/usr/bin/perl -w
+
+use strict;
+use FindBin qw/$Bin/;
+use lib ("$Bin/../lib");
+use IO::Socket::INET;
+
+use Getopt::Long;
+use Sys::Hostname;
+use POSIX qw(strftime);
+use Seco::Gemstone::YAML qw();
+
+use Seco::Gemstone::Make;
+use Seco::Gemstone::Utils qw(motd);
+use Seco::Gemstone::Config qw/get_adminhost get_telldserver/;
+
+use constant NOTIFY_SERVER_PORT => 12347;
+
+my @files;
+my $localrun;
+my $wants_help;
+my $nomulti;
+my $from;
+my $adminhost = get_adminhost();
+
+GetOptions('adminhost=s' => \$adminhost,
+           'from=s' => \$from,
+           'f|file=s' => \@files,
+           'localrun' => \$localrun,
+           'nomulticast' => \$nomulti,
+           'help' => \$wants_help)
+  or usage(1);
+
+usage(0) if $wants_help;
+motd("gemstone","STARTED " . localtime);
+
+eval {
+    local $SIG{ALRM}=sub { die "alarmed" };
+    alarm 60 * 60; # Reasonably long timeout
+    my $gem = Seco::Gemstone::Make->new;
+    $gem->test_from($from);
+    $gem->adminhost($adminhost);
+    $gem->force_refresh(@files);
+    $gem->localrun($localrun);
+    $gem->multicast_allowed(not $nomulti);
+    $gem->make;
+    alarm 0;
+    motd("gemstone", "FINISHED at " . localtime);
+    my $t = strftime('%s %Y-%m-%d %H:%M:%S',localtime);
+    motd("last-working-gemstone", $t);
+    exit 0;
+};
+
+# We "died" somehow.
+my $err_msg = $@; $err_msg =~ s/\s+/ /g;
+motd("gemstone", localtime() . " BROKE: $@");
+die ($err_msg . "\n");
+
+sub usage {
+    my $error = shift;
+    motd("gemstone", "Invalid command line arguments: " . localtime)
+      if $error;
+
+    print STDERR <<"EOM";
+Usage: $0 [options]
+      --adminhost=<admin>     Use a different adminhost
+
+      --from=<rsync path>     Test with files from <rsync path>
+
+      --file=<file>           Force a refresh to '<file>.' Can be used
+			      multiple times.
+			      Use 'all' to refresh all files.
+
+      --localrun              Use local files and avoid performing
+			      signature verification.
+			      It can be used for testing changes.
+
+      --nomulticast           Don't try to get the files from multicast
+
+      --help                  Prints this help
+
+EOM
+    exit($error);
+}

@@ -1,0 +1,16 @@
+#!/bin/sh
+
+set -e
+set -x
+
+cd Class-Accessor-0.34
+/usr/bin/perl Makefile.PL
+make
+make install DESTDIR=$DESTDIR
+cd ..
+
+cd seco-core-0.0.1
+/usr/bin/perl Makefile.PL
+make
+make install DESTDIR=$DESTDIR
+cd ..

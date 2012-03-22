@@ -1,0 +1,189 @@
+#!/usr/bin/perl -w
+
+use strict;
+use Getopt::Long qw/:config require_order gnu_compat/;
+
+use Seco::MultipleSsh;
+use Seco::Range qw/:common/;
+
+$|++;
+
+my %opt = ( 'r|range=s' => "Range of nodes to operate on",
+            'h|help' => "Display this help",
+            'f|forever' => "Run command forever in a loop",
+            'd|delay=i' => "Don't run more than this often (with -f) [60]",
+            'm|maxflight=i' => "Maximum number of processes to run at once",
+            'g|global-timeout=i' => "Timeout for entire operation " .
+            "(-1 for none)",
+            't|timeout=i' => "Timeout for each connection (-1 for none)",
+            'c|connect-timeout=i' => "Timeout for SSH connection",
+            's|stdin' => "Pass through stdin",
+            'collapse' => "Collapse ranges in output",
+            'o|options=s' => "Options to pass to ssh",
+            'p|progress' => "Display progress information",
+            'replace-string=s' => "Replace this with the hostname [HOSTNAME]",
+            'maxread=i' => "Read only this many bytes from stdout [4096]",
+            'maxerror=i' => "Read only this many bytes from stderr [4096]",
+            'w|write-files=s' => "Dump output files into this directory");
+
+my %msgs = ();
+
+my %o;
+usage() unless GetOptions(\%o, keys %opt);
+usage() if $o{h};
+usage("Must specify a range of nodes to operate on") unless $o{r};
+my $range = $o{r};
+my $cmd = "@ARGV";
+my $collapse = $o{collapse};
+
+$o{t} = undef if(exists $o{t} and $o{t} == -1);
+$o{g} = undef if(exists $o{g} and $o{g} == -1);
+defined($o{m}) or $o{m} = 50;
+defined($o{'replace-string'}) or $o{'replace-string'} = 'HOSTNAME';
+defined($o{maxread}) or $o{maxread} = 4096;
+defined($o{maxerror}) or $o{maxerror} = 4096;
+$o{maxread} = undef if($o{maxread} == -1);
+$o{maxerror} = undef if($o{maxerror} == -1);
+defined($o{d}) or $o{d} = 60;
+
+my $writebuf = '';
+if($o{s}) {
+    while(<STDIN>) {
+        $writebuf .= $_;
+    }
+}
+
+my $ssh = Seco::MultipleSsh->new(range => $range,
+                                 cmd => [ $cmd ],
+                                 maxflight => $o{m},
+                                 global_timeout => $o{g},
+                                 connect_timeout => $o{c},
+                                 timeout => $o{t},
+                                 write_buf => $writebuf,
+                                 loop_forever => $o{f},
+                                 loop_delay => $o{d},
+                                 options => $o{o},
+                                 maxread => $o{maxread},
+                                 maxerror => $o{maxerror},
+                                 replace_hostname => $o{'replace-string'})
+  or die "WTF: $!";
+
+$ssh->yield_node_start(sub { my $node = shift;
+                             print "STARTING: $node\n"; } )
+  if($o{p});
+$ssh->yield_node_finish(sub { my $node = shift;
+                              main::shove($node->hostname, $node->read_buf);
+                              main::shoveerr($node->hostname,
+                                             $node->error_buf)
+                                  if($node->error_buf);
+                          } );
+$ssh->yield_node_error(sub { my $node = shift;
+                             main::shove($node->hostname, "ERROR: " .
+                                         $node->error) } );
+$ssh->run;
+
+print "Failed (" . (scalar $ssh->failed) . "): " . $ssh->failed_range . "\n";
+print "Succeeded (" . (scalar $ssh->ok) . "): " . $ssh->ok_range . "\n";
+
+# ssh sucks
+system("stty sane");
+
+sub usage {
+    my $msg = shift;
+    $msg = "\n$msg\n" if($msg);
+    $msg ||= '';
+    
+    print "Usage: $0 [options]\n";
+    
+    my @array;
+    foreach my $key (keys %opt) {
+        my ($left, $right) = split /[=:]/, $key;
+        my ($a, $b) = split /\|/, $left;
+        if($b) {
+            $left = "-$a, --$b";
+        } else {
+            $left = "    --$a";
+        }
+        $left = substr($left . (' 'x20), 0, 20);
+        push @array, "$left $opt{$key}\n";
+    }
+    
+    print sort @array;
+    
+    print <<"EOF";
+
+Examples:
+
+$0 -r \$range uptime
+$0 -m 20 -r \$range -g 10 uptime  # timeout after 10 seconds
+
+EOF
+    
+    die "$msg\n";
+}
+
+sub shove {
+    my $node = shift;
+    my $rest = shift;
+    
+    chomp $rest;
+    $rest .= "\n";
+    
+    if(my $dir = $o{w}) {
+        -d $dir or die "No such directory $dir\n";
+        open my $file, ">$dir/$node\n";
+        print $file $rest;
+        close $file;
+    }
+    
+    if($collapse) {
+        $msgs{$node} ||= '';
+        $msgs{$node} .= $rest;
+    } else {
+        print "$node: $rest";
+    }
+}
+
+sub shoveerr {
+    my $node = shift;
+    my $rest = shift;
+    
+    chomp $rest;
+    $rest .= "\n";
+    
+    if(my $dir = $o{w}) {
+        -d $dir or die "No such directory $dir\n";
+        open my $file, ">$dir/$node\n";
+        print $file $rest;
+        close $file;
+    }
+    
+    if($collapse) {
+        $msgs{$node} ||= '';
+        $msgs{$node} .= "(STDERR) $rest";
+    } else {
+        print STDERR "$node: $rest";
+    }
+}
+
+END {
+    if($collapse) {
+        my %ranges;
+        
+        foreach my $node (keys %msgs) {
+            my $msg = $msgs{$node};
+            
+            if($ranges{$msg}) {
+                $ranges{$msg} .= ",$node";
+            } else {
+                $ranges{$msg} = $node;
+            }
+        }
+        
+        foreach my $key (sort {$a cmp $b} keys %ranges) {
+            my @nodes = expand_range($ranges{$key});
+            $ranges{$key} = compress_range(\@nodes);
+            print "$ranges{$key}: $key";
+        }
+    }
+}
