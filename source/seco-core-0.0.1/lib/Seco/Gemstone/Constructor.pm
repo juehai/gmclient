@@ -5,12 +5,10 @@ use strict;
 eval {
     require Seco::AwesomeRange;
     import Seco::AwesomeRange qw/expand_range range_set_altpath/;
-    log("debug", "Using Seco::AwesomeRange");
 };
 if ($@) {
     require Seco::Range;
     import Seco::Range qw/expand_range range_set_altpath/;
-    log("warning", "Can't find AwesomeRange - using Seco::Range");
 }
 
 use Seco::Gemstone::Utils qw/gem_read_raw_file gem_read_gzip_raw_file 

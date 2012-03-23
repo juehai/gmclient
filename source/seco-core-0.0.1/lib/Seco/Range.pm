@@ -497,8 +497,6 @@ sub _get_cluster_file {
     ($filename) = grep( -e $_ ,
 	"$alt/$cluster/tools/conf/nodes.cf",
 	"$alt/$cluster/nodes.cf",
-	"/home/admin/tools/conf/$cluster/nodes.cf",
-	"/home/seco/tools/conf/$cluster/nodes.cf",
 	"/usr/local/gemclient/$cluster/nodes.cf");
     $filename or _range_warn("$cluster: missing on this machine");
     return $filename;

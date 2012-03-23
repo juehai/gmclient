@@ -5,6 +5,7 @@ use Sys::Hostname;
 use FindBin qw/$Bin/;
 use Cwd;
 
+use Seco::sudo;
 use Seco::Gemstone::Utils qw/gem_all_groups gem_read_raw_file 
     gem_move read_file write_file motd/;
 use Seco::Gemstone::Config qw/get_type get_multicast_dir/;
@@ -124,7 +125,7 @@ sub get_files_from {
     if ($?) {
         die "ERROR: cannot get files from $from\n";
     }
-}
+ }
 
 sub unlock {
     unlink "gemclient.lock";

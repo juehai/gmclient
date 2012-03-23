@@ -9,6 +9,7 @@ use Socket;
 use Seco::Gemstone::Logger qw(log);
 use Carp;
 use Fcntl;
+use Seco::RunAs;
 
 our @ISA = qw/Exporter/;
 our @EXPORT_OK = qw/gem_all_groups gem_read_raw_file gem_read_gzip_raw_file
