@@ -8,5 +8,6 @@ default:
     - multipkg
     - git
 
-
+deb:
+  perl: '/usr/bin/perl'
 
